@@ -1,83 +1,132 @@
-# 📘 Football Oracle Monorepo for XRPL EVM (via Band Protocol)
 
-A fully decentralized football results oracle using [BandChain](https://bandchain.org) as oracle infrastructure and [XRPL EVM Testnet](https://evm-sidechain.xrpl.org/) as the target execution layer.
+# 📘 MyBandOracle Monorepo
 
-This repo includes:
-
-* Python data source + TypeScript proxy server for Football-Data API
-* Oracle scripts written in OWASM (Rust)
-* Smart contract for pushing verified data on XRPL EVM
-* Scripts for BandChain deployment
-* Off-chain relayer logic
+A fully end-to-end decentralized football results oracle, using [BandChain](https://bandchain.org) as oracle infrastructure and an EVM-compatible target chain (e.g. XRPL-EVM) for on-chain publishing.
 
 ---
 
-## 📁 Repo Layout
+## 📁 Repo Structure
 
-```bash
-band-oracle-monorepo/
-├── .env.example             # Env variables needed for setup
-├── contracts/               # XRPL-EVM contracts
-│   ├── FootballDataProvider.sol
-│   └── migrations/deploy.js
-├── data-source/            # Python + TS proxy for Football-Data.org
-│   ├── football_ds.py
-│   ├── proxy-server.ts
-│   └── .env.example
-├── oracle-script/          # OWASM logic in Rust
-│   └── src/lib.rs
-├── scripts/                # Deploy helpers
-│   ├── deploy-band-resources.ts
-│   ├── oracle-scripts/fixtures_oracle_script/src/
-│   └── oracle-scripts/results_oracle_script/src/
-├── generate_report.sh      # Utility to inspect repo content
-└── init_repo.sh            # Directory scaffolding script
 ```
+
+MyBandOracle
+├── .gitignore
+├── README.md
+├── band-oracle-monorepo
+│   ├── .env.example
+│   ├── .env.template
+│   ├── README.md
+│   ├── contracts
+│   │   ├── FootballDataProvider.sol
+│   │   └── migrations
+│   │       └── deploy.js
+│   ├── data-source
+│   │   ├── .env.example
+│   │   ├── football\_ds.py
+│   │   ├── package.json
+│   │   ├── proxy-server.ts
+│   │   ├── requirements.txt
+│   │   └── tsconfig.json
+│   ├── generate\_report.sh
+│   ├── init\_repo.sh
+│   ├── oracle-script
+│   │   ├── Cargo.toml
+│   │   └── src
+│   │       └── lib.rs
+│   └── scripts
+│       ├── deploy-band-resources.ts
+│       ├── oracle-scripts
+│       │   ├── fixtures\_oracle\_script
+│       │   │   └── src
+│       │   │       ├── deploy-fixtures-oracle.script.ts
+│       │   │       └── lib.rs
+│       │   └── results\_oracle\_script
+│       │       └── src
+│       │           ├── deploy-results-oracle-script.ts
+│       │           └── lib.rs
+│       └── package.json
+├── generate\_report.sh
+└── repo\_report.txt
+
+13 directories, 25 files
+
+````
+
+> **Note:** binary files (`.DS_Store`, compiled artifacts, locks) are omitted for clarity.
+
+---
+
+## 📝 What’s Inside
+
+- **`band-oracle-monorepo/`**: the core project  
+  - **`contracts/`**: Solidity on-chain contract & migrations  
+  - **`data-source/`**: Python & TS proxy for fetching Football-Data API  
+  - **`oracle-script/`**: Rust → OWASM aggregation logic  
+  - **`scripts/`**: TypeScript helpers to register Band data sources & scripts  
+  - **`generate_report.sh`**, **`init_repo.sh`**: repo introspection & scaffolding utilities  
+
+- **Root-level tools**:  
+  - **`generate_report.sh`**: prints the full tree + key file snippets into `repo_report.txt`  
+  - **`repo_report.txt`**: example report output  
 
 ---
 
 ## ⚙️ Prerequisites
 
-* Node.js (>=18)
-* Python 3.x with `requests`
-* Rust toolchain (for building OWASM)
-* Docker (optional for isolated worker runtime)
+- **Node.js** ≥ v18  
+- **Python 3.8+**  
+- **Rust toolchain** (with `wasm32-unknown-unknown` target)  
+- **BandChain CLI & tokens** on testnet  
+- **EVM-compatible RPC endpoint** (e.g. XRPL-EVM testnet)  
+- **`tree`** and standard UNIX tools
 
 ---
 
-## 🚀 Step-by-Step Setup
+## 🚀 Detailed Setup Guide
 
 ### 1. Clone & Scaffold
 
 ```bash
-git clone <your_repo_url>
-cd band-oracle-monorepo
+git clone <YOUR_REPO_URL> MyBandOracle
+cd MyBandOracle/band-oracle-monorepo
 ./init_repo.sh
-```
+````
+
+This creates all directories & placeholder files.
 
 ---
 
-### 2. Configure Environment
+### 2. Environment Configuration
 
-#### Copy and fill in both env templates:
+#### 2.1 Root `.env`
 
 ```bash
 cp .env.template .env
-cp data-source/.env.example data-source/.env
 ```
 
-Edit `.env` and set:
+Edit root `.env` and set:
 
-* `FOOTBALL_API_KEY` (from [Football-Data.org](https://www.football-data.org/))
-* `COMPETITION_ID=PD` (LaLiga)
-* `BAND_GRPC_URL`
-* `BAND_MNEMONIC`
-* `WEB3_RPC_URL`
-* `WEB3_PRIVATE_KEY`
+* `FOOTBALL_API_KEY=` *(your Football-Data.org key)*
+* `COMPETITION_ID=PD`
+* `BAND_GRPC_URL=` *(e.g. `https://laozi-testnet6.bandchain.org/grpc-web`)*
+* `BAND_MNEMONIC=` *(12-word mnemonic with testnet BAND tokens)*
+* `WEB3_RPC_URL=` *(EVM RPC URL, e.g. XRPL-EVM)*
+* `WEB3_PRIVATE_KEY=` *(deployer’s private key)*
+* `ORACLE_CONTRACT_ADDRESS=` *(later, fill after deploy)*
+
+#### 2.2 Data-Source `.env`
+
+```bash
+cd data-source
+cp .env.example .env
+```
+
+* `FOOTBALL_API_KEY=` *(same key)*
+* `PORT=3000`
 
 ---
 
-### 3. Run Proxy Server (for Football API)
+### 3. Launch Local Proxy Server
 
 ```bash
 cd data-source
@@ -85,143 +134,127 @@ npm install
 npx ts-node proxy-server.ts
 ```
 
-Proxy runs on `localhost:3000`, masking your API key.
+* Exposes:
+
+  * `GET /fixtures?matchday={n}&competition={id}`
+  * `GET /results?matchday={n}&competition={id}`
 
 ---
 
-### 4. Test Data Source
+### 4. Validate Data-Source Script
 
 ```bash
-python3 data-source/football_ds.py results 35
-```
-
-Should print match results like:
-
-```json
-[
-  { "id": "FCBRMA", "result": "X" },
-  { "id": "SEVCAD", "result": "1" }
-]
+python3 football_ds.py fixtures 1   # should print JSON of match IDs + kickoff timestamps
+python3 football_ds.py results 1    # JSON of finished match results (1/X/2)
 ```
 
 ---
 
-### 5. Compile Oracle Scripts
+### 5. Compile OWASM Oracle Script
 
 ```bash
-cd scripts/oracle-scripts/results_oracle_script
+cd ../oracle-script
 cargo build --release --target wasm32-unknown-unknown
 ```
 
-Repeat for fixtures if needed.
+* Outputs `.wasm` in `target/…/release/`
 
 ---
 
-### 6. Register Band Resources
+### 6. Register Band Data Source & Oracle Script
 
 ```bash
-cd scripts
+cd ../scripts
+npm install
 npx ts-node deploy-band-resources.ts
 ```
 
-* Registers Python Data Source
-* Deploys OWASM Oracle Script
+This will:
 
-> Requires BAND tokens on Laozi testnet and valid mnemonic
+1. **Upload** the `football_ds.py` executable as a Band data source.
+2. **Register** the OWASM script (fixtures/results) on BandChain.
+
+> Ensure your account has enough testnet BAND tokens.
 
 ---
 
-### 7. Deploy XRPL Contracts
-
-Deploy the `FootballDataProvider.sol` via Hardhat or Truffle:
+### 7. Deploy Smart Contract to EVM
 
 ```bash
-# Adjust deploy-contracts.sh or use your own deployment framework
-npx hardhat run scripts/deploy-contracts.sh --network xrplTestnet
+# Example using Hardhat
+npx hardhat run ../scripts/deploy-contracts.sh --network xrplTestnet
 ```
 
-Save the deployed addresses to `.env`.
+* Deploys `FootballDataProvider.sol`
+* Emits deployed addresses—add to root `.env`:
+
+  * `FOOTBALL_PROVIDER_ADDRESS=`
+  * `ORACLE_CONTRACT_ADDRESS=`
 
 ---
 
-### 8. Start Off-Chain Relayer
-
-The relayer will:
-
-* Detect upcoming matchdays
-* Request Band oracle data
-* Fetch proof + relay it to the XRPL contract
+### 8. Start Off-Chain Relayer (“Worker”)
 
 ```bash
-cd worker
+cd ../worker
 npm install
 ./scripts/start-worker.sh
 ```
 
-> Ensure `.env` contains:
->
-> * `BAND_ORACLE_SCRIPT_ID`
-> * `FOOTBALL_PROVIDER_ADDRESS`
+Relayer workflow:
+
+1. Reads upcoming matchdays.
+2. Calls BandChain via the registered oracle script.
+3. Retrieves aggregated results + proof.
+4. Calls `relayProof()` on `FootballDataProvider.sol`.
 
 ---
 
-## 🛠 Optional Scripts
+## 🔧 Scripts Reference
 
-* `generate_report.sh` → Outputs tree + file preview to `repo_report.txt`
-* `init_repo.sh` → Scaffolds directory layout from scratch
-
----
-
-## 🧪 Sample Fixture
-
-**Input:** `GET /results?matchday=35&competition=PD`
-
-**Output:**
-
-```json
-[
-  { "id": "FCBRMA", "result": "1" },
-  { "id": "SEVCAD", "result": "X" }
-]
-```
-
-> `id` = 3-letter home + away (e.g. FCB = Barcelona, RMA = Real Madrid)
+| Script                             | Purpose                                           |
+| ---------------------------------- | ------------------------------------------------- |
+| `init_repo.sh`                     | Scaffold project directories & files              |
+| `generate_report.sh`               | Dump tree + file snippets → `repo_report.txt`     |
+| `scripts/deploy-band-resources.ts` | Register data source & oracle script on BandChain |
+| `scripts/oracle-scripts/*`         | Rust & TS code for fixtures/results OWASM         |
+| `scripts/deploy-contracts.sh`      | Deploy Solidity contracts to EVM                  |
+| `worker/scripts/start-worker.sh`   | Launch off-chain relayer                          |
 
 ---
 
-## 🧩 Architecture Overview
+## 🏗️ Architecture Overview
 
 ```text
 Football-Data API
-     ↓
-[proxy-server.ts] — hides API key
-     ↓
+      ↓ (private key hidden by proxy-server.ts)
+[proxy-server.ts] → local REST endpoint
+      ↓
 [football_ds.py]  — run by BandChain validators
-     ↓
-Oracle Script     — aggregates results
-     ↓
-BandBridge        — verifies proof
-     ↓
-FootballDataProvider.sol (XRPL-EVM)
+      ↓ JSON
+[OWASM oracle-script] — aggregate fixtures/results
+      ↓
+BandChain → proof + result
+      ↓
+FootballDataProvider.sol on EVM
 ```
 
 ---
 
-## 🧼 Cleanup
-
-To reset everything:
+## 🧹 Cleanup & Reset
 
 ```bash
+# Remove all generated files & envs
 git clean -fdx
-rm -rf .env data-source/.env
+rm -f .env data-source/.env worker/.env
 ```
 
 ---
 
-## 📮 Support
+## 📮 Support & Contributions
 
-For help deploying this on BandChain or XRPL-EVM, reach out via Band Protocol or XRPL Dev Discords.
+Feel free to open issues or PRs—your feedback helps make this oracle battle-tested and production-ready!
 
 ---
 
-Happy deploying! ⚽
+Happy decentralizing! ⚽🎉
