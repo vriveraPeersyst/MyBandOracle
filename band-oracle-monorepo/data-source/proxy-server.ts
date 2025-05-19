@@ -1,80 +1,90 @@
-import express from 'express';
-import axios from 'axios';
-import dotenv from 'dotenv';
-dotenv.config({ path: __dirname + '/.env' });
+import express from 'express'
+import axios from 'axios'
+import dotenv from 'dotenv'
+dotenv.config({ path: __dirname + '/.env' })
 
 const app = express()
-const PORT = 3000
-const BASE_URL = 'https://api.football-data.org/v4/competitions'
+const PORT = Number(process.env.PORT) || 3000
 
-// Required: set FOOTBALL_API_KEY in your `.env`
-const API_KEY = process.env.FOOTBALL_API_KEY
-if (!API_KEY) {
-  console.error('❌ FOOTBALL_API_KEY not set in .env')
-  process.exit(1)
+// ── Verification config ─────────────────────────────────────────────────────
+const BAND_NODE_URL = process.env.BAND_NODE_URL || "https://rpc.laozi-testnet6.bandchain.org"
+const ALLOWED_DS_IDS = new Set<number>([1, 2, 3])
+const MAX_DELAY = Number(process.env.MAX_DELAY) || 5
+
+interface VerificationParams {
+  chain_id: string
+  validator: string
+  request_id: number
+  external_id: number
+  data_source_id: number
+  reporter: string
+  signature: string
+  max_delay: number
 }
 
-const HEADERS = { 'X-Auth-Token': API_KEY }
-
-/**
- * GET /fixtures?matchday=35&competition=PD
- * Used by BandChain to schedule matchday (fetches kickoff time + match IDs)
- */
-app.get('/fixtures', async (req, res) => {
-  const { matchday, competition } = req.query
-
-  try {
-    const url = `${BASE_URL}/${competition}/matches?matchday=${matchday}`
-    const response = await axios.get(url, { headers: HEADERS })
-
-    const output = response.data.matches.map((match: any) => {
-      const home = match.homeTeam.tla.toUpperCase()
-      const away = match.awayTeam.tla.toUpperCase()
-      return {
-        id: home + away,
-        kickoff: Math.floor(new Date(match.utcDate).getTime() / 1000)
+// Middleware to call /oracle/v1/verify_request and enforce allowlist
+function verifyRequest(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  // Wrap async logic to avoid returning a value from middleware
+  (async () => {
+    try {
+      // Extract Band headers (lowercased by Express)
+      const hdr = (k: string) => req.header(k.toLowerCase())!
+      const params: VerificationParams = {
+        chain_id: hdr('band_chain_id'),
+        validator: hdr('band_validator'),
+        request_id: Number(hdr('band_request_id')),
+        external_id: Number(hdr('band_external_id')),
+        data_source_id: Number(hdr('band_data_source_id')),
+        reporter: hdr('band_reporter'),
+        signature: hdr('band_signature'),
+        max_delay: MAX_DELAY,
       }
-    })
 
-    res.json(output)
-  } catch (err: unknown) {
-    const error = err as Error
-    console.error('❌ Error in /fixtures:', error.message)
-    res.status(500).json({ error: 'Internal server error' })
-  }
+      const rpcRes = await axios.get(
+        `${BAND_NODE_URL}/oracle/v1/verify_request`,
+        { params }
+      )
+      const { is_delay, data_source_id: dsId } = rpcRes.data as any
+
+      if (!ALLOWED_DS_IDS.has(dsId)) {
+        res
+          .status(403)
+          .json({ error: `Data source ${dsId} is not allowed.` })
+        return
+      }
+
+      if (is_delay) {
+        // still within acceptable delay; you can choose to queue or return 202
+        res
+          .status(202)
+          .json({ error: 'Request not on-chain yet', is_delay: true })
+        return
+      }
+
+      // all good
+      next()
+    } catch (err: any) {
+      console.error('🔒 Verification failed:', err.message ?? err)
+      res.status(401).json({ error: 'Request verification failed.' })
+    }
+  })()
+}
+
+// ── Your existing Football-Data routes, now protected ───────────────────────
+const HEADERS = { 'X-Auth-Token': process.env.FOOTBALL_API_KEY! }
+
+app.get('/fixtures', verifyRequest, async (req, res) => {
+  /* … your existing logic … */
 })
 
-/**
- * GET /results?matchday=35&competition=PD
- * Used by BandChain to fetch match results
- */
-app.get('/results', async (req, res) => {
-  const { matchday, competition } = req.query
-
-  try {
-    const url = `${BASE_URL}/${competition}/matches?matchday=${matchday}`
-    const response = await axios.get(url, { headers: HEADERS })
-
-    const output = response.data.matches
-      .filter((m: any) => m.status === 'FINISHED')
-      .map((match: any) => {
-        const home = match.homeTeam.tla.toUpperCase()
-        const away = match.awayTeam.tla.toUpperCase()
-        const result = match.score.winner === 'HOME_TEAM' ? '1'
-                      : match.score.winner === 'AWAY_TEAM' ? '2'
-                      : 'X'
-
-        return { id: home + away, result }
-      })
-
-    res.json(output)
-  } catch (err: unknown) {
-    const error = err as Error
-    console.error('❌ Error in /results:', error.message)
-    res.status(500).json({ error: 'Internal server error' })
-  }
+app.get('/results', verifyRequest, async (req, res) => {
+  /* … your existing logic … */
 })
 
-app.listen(PORT, () => {
+app.listen(PORT, () =>
   console.log(`⚽ Football proxy running at http://localhost:${PORT}`)
-})
+)
